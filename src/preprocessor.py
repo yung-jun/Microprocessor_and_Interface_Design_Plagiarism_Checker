@@ -49,7 +49,7 @@ def clean_code(content, file_extension):
     if file_extension in ['.a51', '.asm']:
         # Assembly comments start with ;
         content = re.sub(r';.*', '', content)
-    elif file_extension in ['.c', '.txt']: # Assuming txt is C-like or mixed
+    elif file_extension in ['.c']: # Assuming txt is C-like or mixed
         # C comments // and /* */
         content = re.sub(r'//.*', '', content)
         content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
