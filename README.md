@@ -5,10 +5,12 @@
 ## 🌟 功能
 
 - **多重比對來源**：同時分析原始碼與 hex 檔案
+- **支援多種程式語言**：接受 .a51 (組合語言) 及 .c (C語言) 檔案
 - **三種相似度演算法**：
   - **Jaccard Similarity**：適合偵測複製貼上後重新排列的抄襲
   - **Cosine Similarity**：適合偵測改了變數名稱但演算法相同的抄襲
   - **Levenshtein Distance**：適合偵測幾乎完全複製但稍作修改的抄襲
+- **Keil C51 編譯功能**（可選）：將 C 程式碼編譯成組語進行深度比對
 - **LLM 輔助分析**（可選）：使用 Google Gemini 進行高階語意比對
 - **智慧判定邏輯**：
   - Hex 檔案完全相同 → 直接判定為抄襲
@@ -20,11 +22,12 @@
 ## 📁 專案架構
 
 ```
-plagiarism_check_v3/
+.
 ├── src/                          # 核心模組
 │   ├── main.py                   # 主程式入口
 │   ├── preprocessor.py           # 檔案爬取與前處理
 │   ├── detector.py               # 相似度計算
+│   ├── c51_compiler.py           # Keil C51 編譯模組（新增）
 │   ├── llm_analyzer.py           # LLM 分析模組
 │   └── reporter.py               # HTML 報告生成
 ├── reports/                      # 輸出報告路徑
@@ -71,10 +74,12 @@ google-generativeai   # Google Gemini API（可選，僅在使用 LLM 時需要�
 編輯 `src/main.py` 中的參數：
 
 ```python
-# 第 197-202 行
+# 第 197-207 行
 lab_name = "Lab 5"              # Lab 編號，會顯示在報告標題
 hex_threshold = 0.7             # Hex 相似度閾值
 src_threshold = 0.8             # 原始碼相似度閾值
+use_keil_compilation = False    # 是否啟用 Keil C51 編譯功能（新增）
+keil_path = None                # Keil C51 安裝路徑（可選，可自動偵測）
 
 # root_path 指向作業資料根目錄
 root_path = os.path.join(repo_root, '1141_E930600-程式碼與hex-20251120')
@@ -139,6 +144,30 @@ python3 src/main.py
 - ⚠️ 速度較慢（約 2-3 pairs/s）
 - ⚠️ 需要網路連線
 
+#### 方式三：Keil C51 編譯模式（新增）
+
+要啟用 C 語言到組語的深度比對：
+
+1. **安裝 Keil C51**（µVision 或獨立安裝）
+
+2. **設定編譯參數**：
+   ```python
+   use_keil_compilation = True  # 啟用 C→ASM 編譯
+   keil_path = r"C:\Keil_v5\C51"  # 指定安裝路徑，或設為 None 自動搜尋
+   ```
+
+3. **執行程式**：
+   ```powershell
+   python src\main.py
+   ```
+
+當啟用 Keil 編譯功能時：
+- ✅ C 程式碼會被編譯成 8051 組語
+- ✅ 進行更深入的抄襲偵測（變數重新命名、結構重組仍能偵測）
+- ✅ 比較編譯後的組語邏輯相似度
+- ⚠️ 需要安裝 Keil C51 工具鏈
+- ⚠️ 編譯速度會影響整體執行時間
+
 ## 📊 判定邏輯說明
 
 ### 篩選條件
@@ -165,7 +194,7 @@ python3 src/main.py
    - 理由：顯示演算法分析結果
 
 4. **無效提交**
-   - 條件：缺少 .a51 檔案或 hex 檔案為空
+   - 條件：缺少 .a51 或 .c 檔案或 hex 檔案為空
    - 判定：**無效提交**（但若已判定為抄襲則優先顯示抄襲）
 
 ## 📈 報告說明
@@ -191,6 +220,38 @@ python3 src/main.py
      - 💻 原始碼並排比對（含行號）
      - 🔢 Hex 資料比對
 
+## 🔧 進階設定
+
+### 支援的檔案類型
+
+- **組合語言**：`.a51`, `.asm`
+- **C 語言**：`.c`（新增）
+- **十六進位**：`.hex`
+
+### 調整閾值
+
+根據實際需求調整相似度閾值：
+
+```python
+# src/main.py 第 198-199 行
+hex_threshold = 0.7
+src_threshold = 0.8
+```
+
+### 啟用 Keil 編譯模式
+
+```python
+# src/main.py 第 204-205 行
+use_keil_compilation = True    # 啟用 C→ASM 編譯（預設 False）
+keil_path = r"C:\Keil_v5\C51"  # Keil 安裝路徑，設為 None 則自動搜尋
+```
+
+### 修改 LLM 模型
+
+```python
+# src/llm_analyzer.py 第 70 行
+model = genai.GenerativeModel('gemini-2.5-flash-lite')  # 可改為其他模型
+```
 
 
 ## 🧪 測試
@@ -205,25 +266,5 @@ python test_detector.py
 python test_preprocessor.py
 ```
 
-## 🔧 進階設定
 
-### 調整閾值
-
-根據實際需求調整相似度閾值：
-
-```python
-# src/main.py 第 198-199 行
-hex_threshold = 0.7    
-src_threshold = 0.8    
-```
-
-### 修改 LLM 模型
-
-```python
-# src/llm_analyzer.py 第 70 行
-model = genai.GenerativeModel('gemini-2.5-flash-lite')  # 可改為其他模型
-```
-
-
-
-**最後更新**：2025-11-21
+**最後更新**：2025-11-23
