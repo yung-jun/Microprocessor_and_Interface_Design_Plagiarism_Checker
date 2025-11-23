@@ -8,9 +8,25 @@ from reporter import generate_html_report
 from c51_compiler import compile_and_extract_asm, find_keil_c51
 
 
+def read_file_with_encoding(file_path):
+    """
+    Try to read file with UTF-8, then CP950 (Big5).
+    """
+    encodings = ['utf-8', 'cp950', 'latin-1']
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            print(f"Error reading {file_path} with {enc}: {e}")
+            return ""
+    return ""
+
 def check_plagiarism(root_path, filter_mode="threshold", 
                     hex_threshold=0.7, src_threshold=0.8, 
-                    top_metric="max_score", top_percent=0.05,
+                    top_metric="avg_score", top_percent=0.05,
                     lab_name="Lab", use_keil_compilation=False, keil_path=None):
 
     """
@@ -68,25 +84,30 @@ def check_plagiarism(root_path, filter_mode="threshold",
 
         for src_file in files['source']:
             try:
-                with open(src_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                    ext = os.path.splitext(src_file)[1]
+                content = read_file_with_encoding(src_file)
+                if not content:
+                    print(f"Warning: Could not read {src_file} or file is empty")
+                    continue
                     
-                    # Store original content with filename header for display
-                    filename = os.path.basename(src_file)
-                    full_original_source += f"--- {filename} ---\n{content}\n\n"  
-                    
-                    if ext in ['.c']:
-                        full_source += clean_code(content, ext) + " "
-                        if use_keil_compilation:
-                            c_files_for_compilation.append(src_file)
-                    elif ext in ['.a51', '.asm']:
-                        full_source += clean_code(content, ext) + " "
-                        asm_files_content.append(content)
-                    
-                    # Validate source code quality
-                    anomalies = validate_source_code(content, ext)
-                    student_data[student]['source_anomalies'].extend(anomalies)
+                ext = os.path.splitext(src_file)[1].lower()  # Lowercase for case-insensitive comparison
+                
+                # Store original content with filename header for display
+                filename = os.path.basename(src_file)
+                full_original_source += f"--- {filename} ---\n{content}\n\n"  
+                
+                if ext in ['.c']:
+                    cleaned = clean_code(content, ext)
+                    full_source += cleaned + " "
+                    if use_keil_compilation:
+                        c_files_for_compilation.append(src_file)
+                elif ext in ['.a51', '.asm']:
+                    cleaned = clean_code(content, ext)
+                    full_source += cleaned + " "
+                    asm_files_content.append(content)
+                
+                # Validate source code quality
+                anomalies = validate_source_code(content, ext)
+                student_data[student]['source_anomalies'].extend(anomalies)
             except Exception as e:
                 print(f"Error reading {src_file}: {e}")      
 
@@ -120,16 +141,18 @@ def check_plagiarism(root_path, filter_mode="threshold",
         
         for hex_file in files['hex']:
             try:
-                with open(hex_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                    hex_data, hex_info = normalize_hex(content)
-                    full_hex += hex_data
+                content = read_file_with_encoding(hex_file)
+                if not content:
+                    continue
                     
-                    # Aggregate hex info
-                    if hex_info['has_eof']:
-                        all_hex_info['has_eof'] = True
-                    all_hex_info['format_errors'].extend(hex_info['format_errors'])
-                    all_hex_info['valid_lines'] += hex_info['valid_lines']
+                hex_data, hex_info = normalize_hex(content)
+                full_hex += hex_data
+                
+                # Aggregate hex info
+                if hex_info['has_eof']:
+                    all_hex_info['has_eof'] = True
+                all_hex_info['format_errors'].extend(hex_info['format_errors'])
+                all_hex_info['valid_lines'] += hex_info['valid_lines']
 
             except Exception as e:
                 print(f"Error reading {hex_file}: {e}")
@@ -196,7 +219,6 @@ def check_plagiarism(root_path, filter_mode="threshold",
 
         if src1 and src2:
             src_sim = calculate_combined_similarity(src1, src2)
-            
 
         # Hex comparison - only use Levenshtein
         hex1 = student_data[student1]['hex']
@@ -290,7 +312,7 @@ def check_plagiarism(root_path, filter_mode="threshold",
                 verdict_reason = f"LLM分析: {llm_result.get('reasoning', 'N/A')}"
             else:
                 # LLM unavailable, fallback to algorithm
-                verdict = "抄襲" if comp['max_score'] > 0.85 else "未抄襲"
+                verdict = "抄襲" if comp['avg_score'] > 0.85 else "未抄襲"
                 verdict_reason = f"LLM分析不可用 - 演算法分析: Hex Max={comp['max_hex_sim']:.2f}, Source Max={comp['max_src_sim']:.2f}"
         
         
@@ -364,7 +386,7 @@ def check_plagiarism(root_path, filter_mode="threshold",
 
 if __name__ == "__main__":
     # --- Configuration ---
-    LAB_NAME = "Lab test"
+    LAB_NAME = "Lab testss"
     
     # Filter Configuration
     # Options: "threshold", "top_percent"
@@ -376,7 +398,7 @@ if __name__ == "__main__":
 
     # Mode 2: Top Percent (New)
     # Options: "token_seq", "levenshtein", "avg_score"
-    TOP_METRIC = "avg_score"   
+    TOP_METRIC = "token_seq"   
     TOP_PERCENT = 0.05         # Top 5% of pairs
     
     # C51 Compilation Configuration
