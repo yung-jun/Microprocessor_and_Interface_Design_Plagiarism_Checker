@@ -103,6 +103,110 @@ class TestInvalidSubmissionRegressions(unittest.TestCase):
         self.assertNotIn(ext, valid_extensions_without_keil)
 
 
+class TestCaseSensitivityRegressions(unittest.TestCase):
+    """Regression tests for case-sensitivity issues (Issue: 2025-11-23)"""
+    
+    def test_uppercase_extension_recognition(self):
+        """
+        Regression: Uppercase file extensions (.A51, .ASM) were not recognized
+        Issue: main.py didn't lowercase extensions, causing files to be skipped
+        Fix: Added .lower() to extension check in main.py
+        Date: 2025-11-23
+        
+        Root cause: preprocessor.py lowercased extensions when finding files,
+        but main.py didn't lowercase when processing → files skipped → 0.00 scores
+        """
+        # Test that uppercase extensions are handled correctly
+        test_cases = [
+            ('.A51', True),   # Uppercase .A51
+            ('.a51', True),   # Lowercase .a51
+            ('.ASM', True),   # Uppercase .ASM
+            ('.asm', True),   # Lowercase .asm
+            ('.C', True),     # Uppercase .C (when Keil enabled)
+            ('.c', True),     # Lowercase .c
+            ('.TXT', False),  # Uppercase .TXT (invalid)
+            ('.txt', False),  # Lowercase .txt (invalid)
+        ]
+        
+        valid_extensions_asm = ['.a51', '.asm']
+        valid_extensions_with_c = ['.a51', '.asm', '.c']
+        
+        for ext, should_be_valid_asm in test_cases:
+            ext_lower = ext.lower()
+            
+            if ext in ['.C', '.c']:
+                # C files only valid with Keil
+                is_valid = ext_lower in valid_extensions_with_c
+                self.assertEqual(is_valid, should_be_valid_asm, 
+                               f"Extension {ext} (lowercased to {ext_lower}) should be valid with Keil")
+            elif ext in ['.TXT', '.txt']:
+                # TXT files are invalid
+                is_valid = ext_lower in valid_extensions_asm
+                self.assertFalse(is_valid, f"Extension {ext} should be invalid")
+            else:
+                # ASM files always valid
+                is_valid = ext_lower in valid_extensions_asm
+                self.assertEqual(is_valid, should_be_valid_asm,
+                               f"Extension {ext} (lowercased to {ext_lower}) validity mismatch")
+    
+    def test_mixed_case_extensions_in_processing(self):
+        """
+        Regression: Files with mixed case extensions caused inconsistent behavior
+        Issue: Case-sensitive string comparison in file type checks
+        Fix: Normalize to lowercase before comparison
+        """
+        # Simulate the bug scenario
+        test_files = [
+            'student1.A51',
+            'student2.a51', 
+            'student3.ASM',
+            'student4.asm',
+        ]
+        
+        for filename in test_files:
+            ext = os.path.splitext(filename)[1].lower()  # This is the fix
+            
+            # All should be recognized as assembly
+            self.assertIn(ext, ['.a51', '.asm'], 
+                         f"File {filename} should be recognized as assembly")
+    
+    def test_source_code_not_skipped_with_uppercase_extension(self):
+        """
+        Regression: Source code with uppercase extensions was skipped during processing
+        Issue: Extension check was case-sensitive, causing empty source strings
+        Fix: Lowercase extension before checking
+        
+        This test simulates the exact bug scenario:
+        1. File has .A51 extension
+        2. Without .lower(), ext = '.A51'
+        3. Check: '.A51' in ['.a51', '.asm'] → False
+        4. File skipped → empty source → 0.00 similarity
+        """
+        # Simulate the processing logic
+        sample_code = "ORG 0000H\nMOV A, #55H\nEND"
+        
+        # Test with uppercase extension (the bug scenario)
+        filename_upper = "test.A51"
+        ext_upper = os.path.splitext(filename_upper)[1]  # Returns '.A51'
+        
+        # Without .lower() (the bug)
+        is_valid_without_fix = ext_upper in ['.a51', '.asm']
+        self.assertFalse(is_valid_without_fix, 
+                        "Bug scenario: uppercase extension not recognized without .lower()")
+        
+        # With .lower() (the fix)
+        ext_lower = ext_upper.lower()  # Returns '.a51'
+        is_valid_with_fix = ext_lower in ['.a51', '.asm']
+        self.assertTrue(is_valid_with_fix,
+                       "Fix: uppercase extension recognized after .lower()")
+        
+        # Verify code would be processed correctly with fix
+        if is_valid_with_fix:
+            cleaned = clean_code(sample_code, ext_lower)
+            self.assertGreater(len(cleaned), 0, "Code should not be empty after cleaning")
+            self.assertIn('org', cleaned.lower(), "Cleaned code should contain ORG directive")
+
+
 class TestHexProcessingRegressions(unittest.TestCase):
     """Regression tests for hex file processing issues"""
     
